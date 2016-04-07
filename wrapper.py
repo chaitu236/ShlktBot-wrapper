@@ -1,10 +1,12 @@
 import subprocess
 import socket
 import re
+import argparse
+import sys
 
-server_addr = ('playtak.com', 10000)
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock=''
 gameno=''
+args=''
 
 debug = True
 
@@ -17,20 +19,19 @@ def read_line():
     else:
       data += c
   if debug:
-    print 'read_line:'+data
+    print '= '+data
   return data
 
 def send(msg):
   if debug:
-    print 'send:'+msg
+    print '* '+msg
   sock.sendall(msg+'\n')
 
-def post_seek(size):
-  send('Seek '+str(size))
+def post_seek(size, time):
+  send('Seek '+str(size)+' '+str(time))
 
 def bot_to_server(move):
   move = move.strip()
-  print 'bot_to_server', move
   #[T0, X]: ai move => c3
   move = move.split('move => ')[1]
   match = re.match(r'[a-h][1-8]$', move)
@@ -91,8 +92,14 @@ def bot_to_server(move):
   #ai move => Cb4
   print 'not implemented!!'
 
+def wait_for_response(resp):
+  k=read_line()
+  while (resp not in k):
+    k=read_line()
+
+  return k
+
 def server_to_bot(move):
-  print 'server_to_bot', move
   spl = move.split(' ')
   #Game#1 P A4 (C|W)
   if spl[1] == 'P':
@@ -102,7 +109,6 @@ def server_to_bot(move):
         stone='S'
       else:
         stone='C'
-    print 'returning:'+stone+spl[2].lower()+':'
     return stone+spl[2].lower()
 
   #Game#1 M A2 A5 2 1
@@ -132,9 +138,9 @@ def server_to_bot(move):
 
     #there's an ambiguity here.. is the start sq. empty??.. lets find out
     send('Game#'+gameno+' Show '+spl[2])
-    msg = read_line()
-    if 'Over' in msg:
-      return 'Over'
+    msg = wait_for_response('Game#'+gameno+' Show Sq')
+    #if 'Over' in msg:
+    #  return 'Over'
     #Game#1 Show Sq [f]
     origsq = len(msg.split(' ')[3])-2
     prefix=liftsize
@@ -143,22 +149,23 @@ def server_to_bot(move):
     if lst=='1':#this is a bug in bot
       lst=''
 
-    print 'returning:'+str(prefix)+spl[2].lower()+dir+lst+":"
     return str(prefix)+spl[2].lower()+dir+lst
 
 def is_white_turn(move_no):
   return (move_no%2)==0
 
 def read_game_move(game_no):
+  gm = 'Game#'+game_no
   while(True):
     msg = read_line()
-    if(msg.startswith('Game#'+game_no)):
-      return msg
+    for move in ['M', 'P', 'Abandoned', 'Over', 'Show']:
+      if(msg.startswith(gm+' '+move)):
+        return msg
 
 def read_bot_move(p):
   while(True):
     move = p.stdout.readline()
-    print 'read_bot_move:', move
+    print move
     if 'ai move' in move:
       return move
     elif 'Game over' in move:
@@ -181,7 +188,6 @@ def bot(no, is_bot_white):
         p.stdin.write('ai on\n')
         p.stdin.flush()
 
-      print 'reading bot move'
       move=read_bot_move(p)
       if move=='':
         break;
@@ -190,8 +196,6 @@ def bot(no, is_bot_white):
     else:
       print 'reading game move'
       msg = read_game_move(no)
-      print 'readgm', msg
-      print 'Over in '+str('Over' in msg)
       if 'Abandoned' in msg or 'Over' in msg:
         break;
       #if 'R-0' in msg or '0-R' in msg or 'F-0' in msg or '0-F' in msg or '1/2-1/2' in msg:
@@ -199,6 +203,7 @@ def bot(no, is_bot_white):
       msg = server_to_bot(msg)
       if msg == 'Over':
         break;
+      print '> '+msg
       p.stdin.write(msg+'\n')
       p.stdin.flush()
 
@@ -209,13 +214,12 @@ def bot(no, is_bot_white):
 
 def run():
   #for i in range(10)
-  send('Name ShlktBot')
-  i=1
-  while(read_line().startswith("Name?")==True):
-    send('Name ShlkBot'+str(i))
-    i=i+1
+  send('Client ShlktBot')
+  send('Login '+args.user+' '+args.password)
+  if(read_line().startswith("Welcome")==False):
+    sys.exit()
 
-  post_seek(5)
+  post_seek(args.size, args.time)
   msg=read_line()
   while(msg.startswith("Game Start")!=True):
     msg=read_line()
@@ -228,12 +232,27 @@ def run():
   print 'gameno='+gameno
   bot(gameno, spl[7]=="white")
 
+def args():
+  parser = argparse.ArgumentParser(description='This is a demo script by nixCraft.')
+  parser.add_argument('-u','--user', help='User',required=True)
+  parser.add_argument('-p','--password', help='Password',required=True)
+  parser.add_argument('-s','--size', help='Board Size',required=True)
+  parser.add_argument('-t','--time', help='Time in seconds per player',required=True)
+  global args
+  args = parser.parse_args()
+
+
 if __name__ == "__main__":
-  sock.connect(server_addr)
-  read_line()
-  read_line()
+  global sock
+  args()
+  server_addr = ('playtak.com', 10000)
   while(True):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect(server_addr)
+    read_line()
+    read_line()
     try:
       run()
     finally:
+      sock.close()
       pass
