@@ -3,10 +3,14 @@ import socket
 import re
 import argparse
 import sys
+import sched, time
+from threading import Thread
+from time import sleep
 
 sock=''
 gameno=''
 args=''
+sc=None
 
 debug = True
 
@@ -242,6 +246,20 @@ def args():
   args = parser.parse_args()
 
 
+def pinger():
+  send("PING")
+  sc.enter(30, 1, pinger, ())
+
+def _startpinger():
+  global sc
+  sc = sched.scheduler(time.time, time.sleep)
+  sc.enter(10, 1, pinger, ())
+  sc.run()
+
+def startpinger():
+  thread = Thread(target = _startpinger, args=())
+  thread.start()
+
 if __name__ == "__main__":
   global sock
   args()
@@ -251,6 +269,9 @@ if __name__ == "__main__":
     sock.connect(server_addr)
     read_line()
     read_line()
+
+    startpinger()
+
     try:
       run()
     finally:
