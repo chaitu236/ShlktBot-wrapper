@@ -6,30 +6,46 @@ import sys
 import sched, time
 from threading import Thread
 from time import sleep
+from socket import error as socket_error
 
-sock=''
+sock=None
 gameno=''
 args=''
 sc=None
+connected=False
 
 debug = True
 
 def read_line():
   data=''
+  global sock
   while True:
     c = sock.recv(1)
+    if len(c) == 0:
+      sock = None
+      connected = False
+      print 'Connection closed by server. Waiting 30 seconds before re-connecting'
+      time.sleep(30)
+      thread.exit()
     if c=='\n' or c=='':
       break
     else:
       data += c
-  if debug:
+  if debug and data!="OK":
     print '= '+data
   return data
 
 def send(msg):
-  if debug:
+  global sock
+  if debug and msg!="PING":
     print '* '+msg
-  sock.sendall(msg+'\n')
+  try:
+    if sock != None and connected:
+      sock.sendall(msg+'\n')
+    else:
+      print 'Not sending since sock=None or not connected ', sock, connected
+  except socket_error as e:
+    print 'Socket error when trying to send ', e, sock, connected
 
 def post_seek(size, time):
   send('Seek '+str(size)+' '+str(time))
@@ -98,7 +114,7 @@ def bot_to_server(move):
 
 def wait_for_response(resp):
   k=read_line()
-  while (resp not in k):
+  while (resp not in k and "NOK" not in k):
     k=read_line()
 
   return k
@@ -143,8 +159,8 @@ def server_to_bot(move):
     #there's an ambiguity here.. is the start sq. empty??.. lets find out
     send('Game#'+gameno+' Show '+spl[2])
     msg = wait_for_response('Game#'+gameno+' Show Sq')
-    #if 'Over' in msg:
-    #  return 'Over'
+    if 'NOK' in msg:
+      return 'Over'
     #Game#1 Show Sq [f]
     origsq = len(msg.split(' ')[3])-2
     prefix=liftsize
@@ -264,16 +280,23 @@ if __name__ == "__main__":
   global sock
   args()
   server_addr = ('playtak.com', 10000)
+
+  startpinger()
+
   while(True):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(server_addr)
-    read_line()
-    read_line()
-
-    startpinger()
-
     try:
-      run()
-    finally:
-      sock.close()
-      pass
+      sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      sock.connect(server_addr)
+      connected = True
+      read_line()
+      read_line()
+
+      try:
+        run()
+      finally:
+        sock.close()
+        pass
+
+    except socket_error:
+      print 'Socket error. Retrying in 10 seconds'
+      time.sleep(10)
