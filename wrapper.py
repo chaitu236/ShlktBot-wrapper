@@ -66,6 +66,10 @@ def bot_to_server(move):
 
   match = re.match(r'([1-8])?([a-h])([1-8])([><\-+]$)', move)
   if match:
+    stsz = match.group(1)
+    if stsz == None:
+      stsz = '1'
+
     fl = ord(match.group(2))
     rw = int(match.group(3))
     sym = match.group(4)
@@ -82,7 +86,7 @@ def bot_to_server(move):
     elif sym=='-':
       radd = -1
 
-    return 'M '+chr(fl).upper()+str(rw)+' '+chr(fl+fadd).upper()+''+str(rw+radd)+' 1'
+    return 'M '+chr(fl).upper()+str(rw)+' '+chr(fl+fadd).upper()+''+str(rw+radd)+' '+stsz
 
   match = re.match(r'([1-8])([a-h])([1-8])([><\-+])([1-8]+)', move)
   if match:
@@ -285,6 +289,7 @@ if __name__ == "__main__":
 
   while(True):
     try:
+      print 'new instance'
       sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       sock.connect(server_addr)
       connected = True
